@@ -1,0 +1,122 @@
+caledonia:
+  name: Eternal Caledonia
+  code: CL
+  identity: CL
+  effective_from: 0
+  effective_to: 99999999
+  continent: europe
+
+changedonia_first:
+  name: Volatile Changedonia
+  code: CG
+  identity: CG
+  effective_from: 0
+  effective_to: 20140302
+  continent: imaginareum
+
+changedonia_second:
+  name: Volatile Changedonia
+  code: CG
+  identity: CG
+  effective_from: 20140302
+  effective_to: 20140507
+  continent: imaginareum
+
+changedonia_third:
+  name: Volatile Changedonia
+  code: CG
+  identity: CG
+  effective_from: 20140507
+  effective_to: 99999999
+  continent: imaginareum
+
+de1:
+  code: DEU
+  name: Germany
+  area: 357_021
+  identity: DEU
+  effective_from: 0
+  effective_to: 19491007
+  continent: europe
+
+
+de2:
+  code: DEU
+  name: Germany
+  area: 248_688
+  identity: DEU
+  effective_from: 19491007
+  effective_to: 19901003
+  continent: europe
+
+de3:
+  code: DEU
+  name: Germany
+  area: 357_021
+  identity: DEU
+  effective_from: 19901003
+  effective_to: 99999999
+  continent: europe
+
+ddr:
+  code: DDR
+  name: East Germany
+  area: 108_333
+  identity: DDR
+  effective_from: 19491007
+  effective_to: 19901003
+  continent: europe
+
+uk1:
+  code: GBR
+  name: United Kingdom
+  area: 243_610
+  identity: GBR
+  effective_from: 0
+  effective_to: 20140918
+  continent: europe
+
+uk2:
+  code: GBR
+  name: United Kingdom
+  area: 165_223
+  identity: GBR
+  effective_from: 20140918
+  effective_to: 99999999
+  continent: europe
+
+scotland:
+  code: SCO
+  name: Scotland
+  area: 78_387
+  identity: SCO
+  effective_from: 20140918
+  effective_to: 99999999
+  continent: europe
+
+centuria:
+  code: CTA
+  name: Centuria
+  area: 100_100
+  identity: CTA
+  effective_from: 20151201
+  effective_to: 21151201
+  continent: imaginareum
+
+landoftoday:
+  code: LOT
+  name: Land formerly founded today
+  area: 1
+  identity: LOT
+  effective_from: <%= Date.today.strftime("%Y%m%d").to_i %>
+  effective_to: 99999999
+  continent: imaginareum
+
+landin10days:
+  code: LOF
+  name: Land formerly founded in the future
+  area: 1
+  identity: LOF
+  effective_from: <%= 10.days.since.strftime("%Y%m%d").to_i %>
+  effective_to: 99999999
+  continent: imaginareum

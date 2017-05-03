@@ -1,0 +1,6 @@
+callback_a:
+  name: Callback Test
+  code: CLB
+  identity: CLB
+  effective_from: 0
+  effective_to: 99999999

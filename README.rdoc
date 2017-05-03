@@ -1,0 +1,468 @@
+= Acts as SCD
+
+This gem provides SCD (Slowly Changing Dimension) behaviour for ActiveRecord models.
+The kind of SCD implemented is "Type 2" according to http://en.wikipedia.org/wiki/Slowly_changing_dimension
+
+A model which includes this extension keeps the history of entities that change 'slowly'
+(here slowly meaning not more often than once a day). Any such entity is identified by an
++identity+ column (computed automatically from some natural key(s)) which is not a primary
+key of the table. For a single entity multipe records may exist in the table that represent
+the entity at different periods of time. We'll use this terminology here:
+
+* *Identity*: is the key that identifies an entity of a SCD through time.
+  Here we'll often use identity in a loose sense to refer to the entity which
+  it identifies.
+* An *Iteration* is each of the revisions or variations over time that an Identity may go through.
+  Each iteration of an identity is identified by a surrogate primary key (id by default)
+  has an effective period in which the iteration is the valid
+  representation of the identity. Here this period is specified by start and end dates (so that
+  variations which have any frequency higher than daily cannot be handled by this method)
+
+Models that use this plugin must provide an +identity+ column that establishes the identity
+of the entities in addition to the table's primary key that identifies each iteration (revision)
+of the entity. An iteration is active at an *effective* period of time which is is defined,
+with day-granularity, by two integer columns, +effective_from+ and +effective_to+, using YYYYMMDD format.
+
+By default effective_from has value 0 and effective_to 99999999; these special values meaning
+unlimited periods of time (0 represents the 'start of time' and 99999999 the 'end of time').
+
+SCD models must also provide a +compute_identity+ method to compute the identity attribute from
+other attributes of the record.
+
+== Identity and Iteration creation and querying
+
+Assume that we have a model @Country@ with attributes @code@, @name@, @area@, etc.
+We can attach 'acts-as-scd' behaviour to this model using either the @acts_as_scd@ or
+@has_identity@ methods. [FIXME: to be determined if they are going to be synonyms or not]
+
+We'll use the latter. The parameter passed to it is the type of the @identity@ column.
+Notice that we must define how identity is to be computed.
+
+  class Country < ActiveRecord::Base
+    has_identity :string, limit: 3
+    def compute_identity
+      self.identity = code
+    end
+  end
+
+We would define the schema for this table:
+
+  create_table :countries do |t|
+    t.string :code, limit: 3
+    t.string :name
+    t.float  :area
+    t.string :identity, limit: 3
+    t.integer :effective_from, default: 0
+    t.integer :effective_to, default: 99999999
+  end
+
+Imagine you're in a country named Germany at a date such as 1930-01-01 (Disclaimer: no historic accuracy intended).
+We can create a record to represent it like so:
+
+  Country.create_identity code: 'DEU', name: 'Germany', area: 357_02
+
+Now we have a single record that represents an *iteration* of the country with an indefinite life span
+(even though we probably know the country hasn’t been around forever, we’re not interested now in such details).
+
+We can query for the *current* iteration of Germany with:
+
+  Country.current.where(identity: 'DEU').first
+
+*Note* that the +current+ term, when applied to identities, is used to mean the last iteration
+if it extends indefinitely to the future (effective_to == 99999999). The last iteration may
+have an effective end date, meaning that it has disappeared at that date, and in that case it
+would not be current. Also, if iterations exist with effective dates in the future, the
+current iterations may not be active at the current date. To get the iteration which is active
+at the current or any other date, the +at+ methods should be used.
+
+    Country.at_present.where(identity: 'DEU').first
+
+*Attention:* +current+ is not the same as +at_present+ (see notes above). Too see the difference, try:
+
+    Country.where(identity: 'DEU').at_present.first
+
+And also we can request the iteration that was active at some specific date:
+
+    Country.at_date(Date.new(1930,1,1)).where(identity: 'DEU').first
+
+Now, imagine a war comes and goes and the country is split in two. The original country
+can be modified as:
+
+  Country.create_iteration 'DEU', {area: 248_688}, Date.new(1949,10,7)
+
+Note that we identify the country by its identity and must only supply here the attributes that change
+from the 'current' existing iteration. Let's compute the area that Germany has lost:
+
+  germany_v1 = Country.initial.where(identity: 'DEU').first
+  germany_v2 = Country.current.where(identity: 'DEU').first
+  area = germany_v2.area - germany_v1.area
+
+A new country is established in the lost area; let's call it East Germany:
+
+  Country.create_identity code: 'DDR', name: 'East Germany', area: area
+
+To make things more interesting, let's assume some more time passes and someone
+breaks down the division between the countries at, say, 1990-10-03:
+
+  date = Date.new(1990,10,3)
+  deu = Country.current.where(identity: 'DEU').first
+  ddr = Country.current.where(identity: 'DDR').first
+  merged_area = deu.area + ddr.area
+  Country.current.where(code: 'DEU').first.terminate_iteration(date)
+  Country.create_iteration 'DEU', {area: merged_area}, date
+
+  ....
+
+== Callbacks
+
+Models that include 'acts-as-scd' behaviour, will receive four new callbacks:
+
++before_terminate_iteration+ and +after_terminate_iteration+
++before_create_iteration+ and +after_create_iteration+
+
+The callbacks are defined pretty much the same way as standard callbacks (like +before_create+) would be defined.
+Let's define a callback that prevents a Country to be terminated in the past:
+
+  class Country < ActiveRecord::Base
+    has_identity :string, limit: 3
+
+    def compute_identity
+      self.identity = code
+    end
+
+    before_terminate_iteration :check_effective_to
+
+    def check_effective_to
+      if effective_to_date < Date.today
+        errors.add(:effective_to_date, I18n.t('errors.messages.invalid'))
+      end
+    end
+  end
+
+When we now try to terminate a Country in the past, we'll receive an error message and the model will not be terminated.
+
+== Work in progresss
+
+You can take a look at the tests while this is being developed...
+
+== Associations
+
+We'll use another model, City, to show how to work with associations between SCD models.
+
+...
+
+== BlockUpdate
+
+In some cases, modification of SCD tables is performed not on individual records, but
+on the whole table at a given date. A typical example of this is an industrial classification
+system such as SIC for the US (or NAICS for North America, UKSIC, CNAE --Spain-- GICS, ISIC, ....)
+
+...
+
+== Reference
+
+=== A. Declaration (methods introduced in ActiveRecord::Base)
+
+=== B. Methods gained by SCD models
+
+==== Periods
+
+===== Standard methods
+
+Let's assume there is a Country which got split up in the year 1949 and reunited in 1990.
+
+    germany = Country.where(identity: 'DEU')
+
+Let's retrieve all periods of this Country.
+
+    periods = germany.effective_periods # ['to 1949-10-07', '1949-10-07 - 1990-10-03', 'since 1990-10-03']
+
+Another way is to hand over the arguments of +where+ directly to +effective_periods+ .
+
+    periods = Country.effective_periods(identity: 'DEU') # ['to 1949-10-07', '1949-10-07 - 1990-10-03', 'since 1990-10-03']
+
+The entries within the array instances of 'ActsAsScd::Period'.
+This allows for some detailed checks on a specific period.
+Let's do some checks on the present period 'since 1990-10-03'.
+
+    periods[2].valid?                   # true
+    periods[2].invalid?                 # false
+
+    periods[2].limited_start?           # true
+    periods[2].unlimited_start?         # false
+
+    periods[2].unlimited_end?           # true
+    periods[2].limited_end?             # false
+
+    periods[2].limited?                 # true
+    periods[2].unlimited?               # false
+
+*Explanation:* Every pair are opposites of each other.
+
+Let's check if the selected period is active at the time beeing, which is '2015-12-09'.
+
+    periods[2].at_present?              # true
+
+Let's check if the selected period was active at the in '1949-10-07'.
+
+    periods[2].at_date? Date.new(1949,10,7)  # false
+
+Let's find out the reference dates for all periods in 2 different ways.
+
+    periods[0].reference_date           # 19491006
+    periods[1].reference_date           # 19491007
+    periods[2].reference_date           # 19901003
+
+    germany.reference_dates             # [19491006,19491007,19901003]
+    Country.reference_dates(identity: 'DEU')
+
+*Explanation:* Primarily the reference date is the start date. If there is no start date, the previous day of the end date is used.
+
+===== Formatted methods
+
+When working with a client side framework, it's often adviced to have the periods formatted in a different way.
+First let's look at the iteration methods (the args method is shown too).
+
+    germany.effective_periods_formatted                     # [{:start => '0000-01-01', :end => '1949-10-07', :reference => '1949-10-06'},
+                                                            #  {:start => '1949-10-07', :end => '1990-10-03', :reference => '1949-10-07'},
+                                                            #  {:start => '1990-10-03', :end => '9999-12-31', :reference => '1990-10-03'}]
+    Country.effective_periods_formatted('%Y-%m-%d',identity: 'DEU')
+
+    germany.effective_periods_formatted('%d.%m.%Y')         # [{:start => '01.01.0000', :end => '07.10.1949', :reference => '06.10.1949'},
+                                                            #  {:start => '07.10.1949', :end => '03.10.1990', :reference => '07.10.1949'},
+                                                            #  {:start => '03.10.1990', :end => '31.12.9999', :reference => '03.10.1990'}]
+    Country.effective_periods_formatted('%d.%m.%Y',identity: 'DEU')
+
+    germany.reference_dates_formatted                       # ['1949-10-06','1949-10-07','1990-10-03']
+    Country.reference_dates_formatted('%Y-%m-%d',identity: 'DEU')
+
+    germany.reference_dates_formatted('%d.%m.%Y')           # ['06.10.1949','07.10.1949','03.10.1990']
+    Country.reference_dates_formatted('%d.%m.%Y',identity: 'DEU')
+
+*Attention:* When using the args method you'll have to hand over a formatting string, otherwise it defaults to '%Y-%m-%d'.
+
+The iteration methods are also available to period instances.
+
+    periods[0].formatted                                # {:start => '0000-01-01', :end => '1949-10-07', :reference=> '1949-10-06'}
+    periods[0].formatted('%d.%m.%Y')                    # {:start => '01.01.0000', :end => '07.10.1949', :reference=> '06.10.1949'}
+
+    periods[0].reference_date_formatted                 # '1949-10-06'
+    periods[0].reference_date_formatted('%d.%m.%Y')     # '06.10.1949'
+
+*Attention:* Keep in mind that the period checks above are not available anymore, since the array instances are Hashes.
+
+===== Periods - Combined Periods
+
+The method +effective_periods+ will return any period which is stored in the database, regardless of containing duplicates or overlapping periods.
+
+    germany_and_uk = Country.where('identity = ? OR identity = ?','DEU','GBR')
+    germany_and_uk.effective_periods                    # ['to 1949-10-07',
+                                                        #  'to 2014-09-18',
+                                                        #  '1949-10-07 - 1990-10-03',
+                                                        #  'since 1990-10-03',
+                                                        #  'since 20140918']
+
+If you want a unique overview over all periods you have to use +combined_periods+ .
+
+    germany_and_uk.combined_periods                     # ['to 1949-10-07',
+                                                        #  '1949-10-07 - 1990-10-03',
+                                                        #  '1990-10-03 - 2014-09-18',
+                                                        #  'since 20140918']
+
+Like with +effective_periods+ we have all the possibilities to format the returned periods. The args method is available too.
+
+    germany_and_uk.combined_periods_formatted           # [{:start => '0000-01-01', :end => '1949-10-07', :reference => '1949-10-06'},
+                                                        #  {:start => '1949-10-07', :end => '1990-10-03', :reference => '1949-10-07'},
+                                                        #  {:start => '1990-10-03', :end => '2014-09-18', :reference => '1990-10-03'},
+                                                        #  {:start => '2014-09-18', :end => '9999-12-31', :reference => '2014-09-18'}]
+    Country.combined_periods_formatted('%Y-%m-%d','identity = ? OR identity = ?','DEU','GBR')
+
+    germany_and_uk.combined_periods_formatted           # [{:start => '01.01.0000', :end => '07.10.1949', :reference => '06.10.1949'},
+                                                        #  {:start => '07.10.1949', :end => '03.10.1990', :reference => '07.10.1949'},
+                                                        #  {:start => '03.10.1990', :end => '18.09.2014', :reference => '03.10.1990'},
+                                                        #  {:start => '18.09.2014', :end => '31.12.9999', :reference => '18.09.2014'}]
+
+==== Class Methods
+
+===== A. Query Methods to perform checks on identities
+
+The following class methods return a Boolean value:
+
+    model.has_identity?(identity)
+    model.has_identity_at?(identity,date)
+    model.has_identity_at_present?(identity)
+    model.has_unlimited_identity?(identity)
+
+Let's presume there are only three identities (respectively countries): "DEU", "DDR" and "CL.
+"CL" is a static (or unlimited) identity with start date 0000-01-01 and end date 9999-12-31.
+"DEU" has 3 periods, it was changed in 1949-10-07 and 1990-10-03.
+"DDR" is a limited identity with start date 1949-10-07 and end date 1990-10-03.
+
+    Country.has_identity?('DEU')                            # true
+    Country.has_identity?('DDR')                            # true
+    Country.has_identity?('CL')                             # false
+
+    Country.has_identity_at?('DEU', Date.new(1949,10,6))    # true
+    Country.has_identity_at?('DEU', Date.new(1949,10,7))    # true
+    Country.has_identity_at?('DEU', Date.new(1990,10,2))    # true
+    Country.has_identity_at?('DEU', Date.new(1990,10,3))    # true
+
+    Country.has_identity_at?('DDR', Date.new(1949,10,6))    # false
+    Country.has_identity_at?('DDR', Date.new(1949,10,7))    # true
+    Country.has_identity_at?('DDR', Date.new(1990,10,2))    # true
+    Country.has_identity_at?('DDR', Date.new(1990,10,3))    # false
+
+    Country.has_identity_at_present?('DEU')                 # true
+    Country.has_identity_at_present?('DDR')                 # false
+    Country.has_identity_at_present?('CL')                  # true
+
+    Country.has_unlimited_identity?('DEU')                  # false
+    Country.has_unlimited_identity?('DDR')                  # false
+    Country.has_unlimited_identity?('CL')                   # true
+
+When working with a client side framework, normally the suitable date parameter is a string.
+Therefore it is adviced to use the following string format: YYYY-MM-DD.
+
+    Country.has_identity_at?('DEU', '1949-10-06')    # true
+    Country.has_identity_at?('DDR', '1990-10-03')    # false
+
+===== B. Query Methods to find specific identities
+
+The following class methods return an instance (or nil if nothing was found):
+
+    model.find_by_identity_at(identity,date)
+    model.find_by_identity_at_present(identity)
+    model.find_by_identity_at_present_or(identity[,date])
+
+Let's presume there are only three identities (respectively countries): "DEU", "DDR" and "CL.
+"CL" is a static (or unlimited) identity with start date 0000-01-01 and end date 9999-12-31.
+"DEU" has 3 periods, it was changed in 1949-10-07 and 1990-10-03.
+"DDR" is a limited identity with start date 1949-10-07 and end date 1990-10-03.
+
+    Country.find_by_identity_at('DEU', Date.new(1949,10,6))  # <Country> Germany {0000-01-01 to 1949-10-07}
+    Country.find_by_identity_at_present('DEU')               # <Country> Germany {1990-10-03 to 9999-12-31}
+
+    Country.find_by_identity_at('DDR', Date.new(1949,10,6))  # nil
+    Country.find_by_identity_at('DDR', Date.new(1970,01,01)) # <Country> East Germany {1949-10-07 to 1990-10-03}
+    Country.find_by_identity_at_present('DDR')               # nil
+
+    Country.find_by_identity_at('CL', Date.new(1949,10,6))   # <Country> Eternal Caledonia {0000-01-01 to 9999-12-31}
+    Country.find_by_identity_at_present('CL')                # <Country> Eternal Caledonia {0000-01-01 to 9999-12-31}
+
+The method +find_by_identity_at_present_or+ is a mixup of the 2 previous methods and should preferably be used in controllers.
+The big advantage is, that you do not necessarily need to hand over the +date+ parameter.
+
+    Country.find_by_identity_at_present_or('DEU')                       # <Country> Germany {1990-10-03 to 9999-12-31}
+    Country.find_by_identity_at_present_or('DEU', Date.new(1949,10,6))  # <Country> Germany {0000-01-01 to 1949-10-07}
+
+When working with a client side framework, normally the suitable date parameter is a string.
+Therefore it is adviced to use the following string format: YYYY-MM-DD.
+
+    Country.find_by_identity_at_present_or('DEU', "1949-10-06")  # <Country> Germany {0000-01-01 to 1949-10-07}
+
+===== C. Query methods returning (further-refinable) queries
+
+...
+
+===== D. Query methods that return objects
+
+...
+
+===== E. Methods with limitations
+
+...
+
+==== Associations
+
+==== CRUD of Identities/Iterations
+
+==== Instance methods
+
+Related iterations, ...
+
+=== C. Migration
+
+In order to make a model act as SCD you'll have to manually modify the appropriate migration, e.g.
+
+    class AddScdToYourTable < ActiveRecord::Migration
+      def up
+        add_column :your_table, :identity, :integer, :limit => 11
+        add_column :your_table, :effective_from, :integer, :default =>  0
+        add_column :your_table, :effective_to, :integer, :default =>  99999999
+        add_index :your_table, :identity
+        add_index :your_table, :effective_from
+        add_index :your_table, :effective_to
+        add_index :your_table, [:effective_from, :effective_to]
+
+        set_identities
+      end
+
+      def down
+        remove_column :your_table, :identity
+        remove_column :your_table, :effective_from
+        remove_column :your_table, :effective_to
+        remove_index :your_table, :identity
+        remove_index :your_table, :effective_from
+        remove_index :your_table, :effective_to
+        remove_index :your_table, [:effective_from, :effective_to]
+      end
+
+      def set_identities
+        table = YourTable.all
+        table_count = table.count
+        table.each_with_index do |row, index|
+          row.update_attribute(:identity,row.alias)
+          puts "#{index}/#{table_count}: added identity #{row.identity}"
+        end
+      end
+    end
+
+== TODO
+
+* Write Tests
+* Write Documentation
+* Require modal_fields or make it optional?
+* Create generator to add identity to a model and generate migration
+* Test with both Rails 3 & 4
+* Release gem 1.0.0
+
+== Gem Development
+
+If you plan on forking and developing the gem, you'll have to do some additional steps:
+
+=== Install Gems
+
+Just run...
+
+    bundle install
+
+=== Configuring Test Environment
+
+Before you can run tests you need to create a 'database.yml'.
+The following task will generate a database.yml.* for each (common) database adapter:
+
+If you want to activate the default sqlite3 adapter you simply run:
+
+    rake db:adapter:generate
+    rake db:adapter:change ADAPTER=sqlite3
+
+If you want to use the mysql2 adapter for your tests, type the following:
+
+    rake db:adapter:generate DATABASE=acts_as_scd USERNAME=root PASSWORD=yourpassword
+    rake db:adapter:change ADAPTER=mysql2
+    rake db:create DATABASE_ENV=test
+
+=== Testing
+
+All Tests
+
+    rake test
+
+Model Tests
+
+    rake test:models
+
+Controller Tests
+
+    rake test:controllers
+

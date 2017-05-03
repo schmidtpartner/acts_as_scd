@@ -1,0 +1,5 @@
+de:
+  activerecord:
+    attributes:
+      country:
+        cannot_create_identity_period_overlap: "Das gewählte Land existiert bereits zum gewählten Zeitraum."

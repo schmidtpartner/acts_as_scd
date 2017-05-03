@@ -1,0 +1,6 @@
+@TODO 'acts_as_scd'
+-------------------
+[+]Sicherstellen, dass Enddatum bis zum Start der nächsten Periode gesetzt wird, momentan: 99999999
+[-]Beim Löschen sicherstellen, dass auch das Startdatum berücksichtigt wird, Szenario: 2 Einträge (20160119-99999999 und 20160125-99999999) - Periode ab 25.01.2016 soll gelöscht werden, es wird jedoch die erste gefundene Periode auf die das Datum ebenfalls zutrifft gelöscht, nämlich 20160119-9999999
+[-]Beim Neu anlegen muss am Enddatum gesplittet werden können (es müssen 2 einzelne Tage  übrig bleiben)
+[-]Beim Terminieren muss am Enddatum terminiert werden können (es muss der Tag am Startdatum übrig bleiben)

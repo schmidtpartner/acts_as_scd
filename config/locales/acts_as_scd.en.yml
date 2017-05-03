@@ -1,0 +1,23 @@
+en:
+  scd:
+    period:
+      until: 'to'
+      from:  'since'
+      between: '-'
+      always: '-'
+    errors:
+      cannot_find_iterations: 'Could not find any periods.'
+      cannot_create_identity_period_overlap: 'The period would interfere with an existing period.'
+      cannot_create_iteration_at_start_date: 'Can not split period at start-date.'
+      cannot_create_iteration_at_end_date: 'Can not split period at end-date.'
+      cannot_create_iteration_that_does_not_exist: 'Can not split a period that does not exist.'
+      cannot_update_iteration_that_does_not_exist: 'Can not update a period that does not exist.'
+      cannot_terminate_iteration_that_does_not_exist: 'Can not terminate a period that does not exist.'
+      cannot_terminate_iteration_at_start_date: 'Can not terminate period at start-date.'
+      cannot_terminate_iteration_at_end_date: 'Can not terminate period at end-date.'
+      cannot_destroy_iteration_that_does_not_exist: 'Can not delete a period that does not exist (nor any existing associations).'
+      cannot_delete_iteration_that_does_not_exist: 'Can not delete a period that does not exist.'
+      cannot_destroy_identity_that_does_not_exist: 'Can not delete an identity that does not exist (nor any existing associations).'
+      cannot_delete_identity_that_does_not_exist: 'Can not delete an identity that does not exist.'
+      effective_from_is_not_valid: 'The given start-date is not valid.'
+      effective_to_is_not_valid: 'The given end-date is not valid.'
